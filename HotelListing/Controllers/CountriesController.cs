@@ -11,6 +11,11 @@ using HotelListing.Model.Country;
 using HotelListing.Models.Country;
 using System.Diagnostics.Metrics;
 using HotelListing.Contracts;
+using Microsoft.AspNetCore.Authorization;
+using System.Net.Http;
+using HtmlAgilityPack;
+using Microsoft.AspNetCore.Identity;
+using FluentValidation;
 
 namespace HotelListing.Controllers
 {
@@ -20,11 +25,16 @@ namespace HotelListing.Controllers
     {
         private readonly IMapper _mapper;
         private readonly ICountriesRepository _countriesRepository;
+        private readonly HttpClient _httpClient;
+        private readonly ILogger<CountriesController> _logger;
+        private readonly IHttpClientFactory _httpClientFactory;
 
-        public CountriesController(IMapper mapper, ICountriesRepository countriesRepository)
+        public CountriesController(IMapper mapper, ICountriesRepository countriesRepository,ILogger<CountriesController> logger, IHttpClientFactory clientFactory)
         {
             this._mapper = mapper;
             this._countriesRepository = countriesRepository;
+            this._logger = logger;
+            this._httpClientFactory = clientFactory;
         }
 
         // GET: api/Countries
@@ -55,6 +65,7 @@ namespace HotelListing.Controllers
         // PUT: api/Countries/5
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
+        [Authorize]
         public async Task<IActionResult> PutCountry(int id, UpdateCountryDto updateCountryDto)
         {
             if (id != updateCountryDto.Id)
@@ -93,6 +104,7 @@ namespace HotelListing.Controllers
         // POST: api/Countries
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
+        [Authorize]
         public async Task<ActionResult<Country>> PostCountry(Country createCountryDto)
         {
             
@@ -105,6 +117,7 @@ namespace HotelListing.Controllers
 
         // DELETE: api/Countries/5
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Administrator")]
         public async Task<IActionResult> DeleteCountry(int id)
         {
             var country = await _countriesRepository.GetAsync(id);
@@ -117,6 +130,37 @@ namespace HotelListing.Controllers
 
             return NoContent();
         }
+
+
+        [HttpGet("/countrySchool/{country_name}")]
+        public async Task<IActionResult> GetCountrySchool([FromRoute] string country_name)
+        {
+            var countryDto = new CountrySchoolsDto { CountryName = country_name };
+            var validator = new CountrySchoolsValidator();
+            var validatorResult = await validator.ValidateAsync(countryDto);
+            if (!validatorResult.IsValid)
+            {
+                return BadRequest(validatorResult.Errors);
+            }
+
+
+            var httpClient = _httpClientFactory.CreateClient();
+
+            var httpRequestMesage = new HttpRequestMessage(HttpMethod.Get, $"http://universities.hipolabs.com/search?country={country_name}");
+
+            var response = await httpClient.SendAsync(httpRequestMesage);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadAsStringAsync();
+
+                return Content(result, "application/json");
+            }
+
+            return BadRequest();
+        }
+
+
 
         private async Task<bool> CountryExists(int id)
         {
